@@ -278,6 +278,25 @@ jobs:
         source .current_config.mk
         bash ../scripts/install_r28s_tune.sh "${FRIENDLYWRT_SRC}/${FRIENDLYWRT_ROOTFS}"
 
+    - name: Exclude local APK repository from firmware
+      run: |
+        cd project
+        python3 - <<'PY'
+        from pathlib import Path
+
+        path = Path('build.sh')
+        text = path.read_text()
+        marker = '\t\t[ -d ${ROOTFS_DIR}/opt ] || mkdir ${ROOTFS_DIR}/opt\n'
+        cleanup = (
+            '\t\t# Keep the package repository only as a build-time input.\n'
+            '\t\trm -rf "${ROOTFS_DIR}/usr/local/$(basename "${FRIENDLYWRT_PACKAGE_DIR}")"\n'
+            '\t\trm -f "${ROOTFS_DIR}/etc/apk/repositories.d/local.list"\n\n'
+        )
+        if text.count(marker) != 1:
+            raise SystemExit('unable to locate rootfs image preparation point in build.sh')
+        path.write_text(text.replace(marker, cleanup + marker, 1))
+        PY
+
     - name: Compile uboot and kernel
       run: |
         cd project
