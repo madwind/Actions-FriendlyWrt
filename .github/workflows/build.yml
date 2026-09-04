@@ -3,10 +3,6 @@ name: Build FriendlyWrt
 on:
   watch:
     types: started
-  push:
-    branches: [master]
-    paths:
-      - '.github/workflows/build.yml'
 
 jobs:
   prepare_release:
