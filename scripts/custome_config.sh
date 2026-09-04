@@ -42,14 +42,12 @@ done
 
 # Restore the OpenWrt 25.12 rockchip/armv8 release user-space package set.
 # Normal router packages such as dnsmasq, firewall4, nftables, odhcp6c and PPP
-# come from OpenWrt target/device defaults and are intentionally not duplicated
-# here. ethtool is the only extra user-space package, required by R28S tuning.
+# come from OpenWrt target/device defaults and are intentionally not duplicated.
 cat >> "$BASE_CONFIG" <<'EOF'
 
 # OpenWrt 25.12 rockchip/armv8 release user-space package set.
 CONFIG_PACKAGE_attendedsysupgrade-common=y
 CONFIG_PACKAGE_cgi-io=y
-CONFIG_PACKAGE_ethtool=y
 CONFIG_PACKAGE_libiwinfo=y
 CONFIG_PACKAGE_libiwinfo-data=y
 CONFIG_PACKAGE_liblucihttp=y
