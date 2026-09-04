@@ -3,6 +3,11 @@ name: Build FriendlyWrt
 on:
   watch:
     types: started
+  push:
+    branches: [master]
+    paths:
+      - '.github/workflows/build.yml'
+
 jobs:
   prepare_release:
     runs-on: ubuntu-22.04
@@ -178,10 +183,10 @@ jobs:
     needs: [prepare_release,build_friendlywrt]
     runs-on: ubuntu-22.04
     if: github.event.repository.owner.id == github.event.sender.id
-
     strategy:
       matrix:
         VERSION: ['25.12']
+
     steps:
     - name: Checkout
       uses: actions/checkout@v4
@@ -248,7 +253,6 @@ jobs:
         cd project
         MODEL=R28S-Zero2-NEO3Plus-Series
         IMG_FILE=${MODEL}-FriendlyWrt-${{ matrix.VERSION }}.img
-        TGZ_FILE=images-${MODEL}-FriendlyWrt-${{ matrix.VERSION }}.tgz
         DIST_DIR=friendlywrt$(echo ${{ matrix.VERSION }} | awk -F . '{print $1}')
 
         cat > .current_config.mk <<EOL
@@ -259,8 +263,6 @@ jobs:
         EOL
 
         echo "img_filename=$IMG_FILE" >> $GITHUB_OUTPUT
-        echo "archive_filename=$TGZ_FILE" >> $GITHUB_OUTPUT
-        echo "dist_dir=$DIST_DIR" >> $GITHUB_OUTPUT
 
     - name: Unpack friendlywrt rootfs
       run: |
@@ -307,36 +309,12 @@ jobs:
         ./build.sh kernel
 
     - name: Build sd image
-      id: build_sd_image
       run: |
         cd project
         ./build.sh sd-img
         mv out/${{ steps.config.outputs.img_filename }} ../artifact/
-
-        # package images-xyz.tgz
-        pushd scripts/sd-fuse/ > /dev/null
-        if [ ! -d "${{ steps.config.outputs.dist_dir }}" ]; then
-            echo "ERROR: image directory ${{ steps.config.outputs.dist_dir }} not found under scripts/sd-fuse/"
-            ls -la
-            exit 1
-        fi
-        archive_dir="${{ steps.config.outputs.dist_dir }}-rk3528"
-        mv "${{ steps.config.outputs.dist_dir }}" "${archive_dir}"
-        tar czf "${{ steps.config.outputs.archive_filename }}" "${archive_dir}"
-        mv ${{ steps.config.outputs.archive_filename }} ../../../artifact/
-        popd > /dev/null
-
         cd ../artifact/
         gzip *.img
-
-    - name: Upload images-XYZ.tgz to release
-      uses: svenstaro/upload-release-action@v2
-      with:
-        repo_token: ${{ secrets.GITHUB_TOKEN }}
-        file: ./artifact/${{ steps.config.outputs.archive_filename }}
-        asset_name: ${{ steps.config.outputs.archive_filename }}
-        tag: ${{ needs.prepare_release.outputs.release_tag }}
-        overwrite: true
 
     - name: Upload XYZ.img.gz to release
       uses: svenstaro/upload-release-action@v2
