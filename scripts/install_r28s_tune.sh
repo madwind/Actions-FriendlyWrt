@@ -23,6 +23,10 @@ cat > "$ROOTFS/usr/sbin/r28s-tune" <<'EOF'
 [ -w /sys/class/net/eth1/queues/rx-0/rps_flow_cnt ] && echo 0 > /sys/class/net/eth1/queues/rx-0/rps_flow_cnt
 sysctl -w net.core.rps_sock_flow_entries=0 >/dev/null 2>&1 || true
 
+if command -v ethtool >/dev/null 2>&1; then
+    ethtool -K eth1 sg on tso on gso on >/dev/null 2>&1 || true
+fi
+
 if command -v modprobe >/dev/null 2>&1 && modprobe tcp_bbr >/dev/null 2>&1; then
     sysctl -w net.ipv4.tcp_congestion_control=bbr >/dev/null 2>&1 || true
 fi
