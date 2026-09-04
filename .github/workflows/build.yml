@@ -4,6 +4,9 @@ on:
   watch:
     types: started
 
+permissions:
+  contents: write
+
 jobs:
   prepare_release:
     runs-on: ubuntu-22.04
