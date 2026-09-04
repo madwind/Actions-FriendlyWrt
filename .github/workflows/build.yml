@@ -33,7 +33,7 @@ jobs:
     if: github.event.repository.owner.id == github.event.sender.id
     strategy:
       matrix:
-        VERSION: ['25.12', '24.10']
+        VERSION: ['25.12']
         SET: [docker, non-docker]
 
     steps:
@@ -187,7 +187,7 @@ jobs:
 
     strategy:
       matrix:
-        VERSION: ['25.12', '24.10']
+        VERSION: ['25.12']
         CPU: [rk3328, rk3528, rk3399, rk3566, rk3568, rk3576, rk3588]
         SET: [docker, non-docker]
     steps:
@@ -321,6 +321,13 @@ jobs:
         cd project
         tar xzf "../host-pm-${{ matrix.VERSION }}.tgz"
 
+    - name: Install R28S runtime tuning
+      if: matrix.CPU == 'rk3528'
+      run: |
+        cd project
+        source .current_config.mk
+        bash ../scripts/install_r28s_tune.sh "${FRIENDLYWRT_SRC}/${FRIENDLYWRT_ROOTFS}"
+
     - name: Compile uboot and kernel
       run: |
         cd project
@@ -397,4 +404,3 @@ jobs:
             echo "Deleting asset: $asset"
             gh release delete-asset "$RELEASE_TAG" "$asset" --yes --repo "$GITHUB_REPOSITORY"
           done
-
