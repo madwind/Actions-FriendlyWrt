@@ -34,7 +34,6 @@ jobs:
     strategy:
       matrix:
         VERSION: ['25.12']
-        SET: [docker, non-docker]
 
     steps:
     - name: Checkout
@@ -66,15 +65,15 @@ jobs:
         mkdir project
         cd project
         repo init --depth=1 -u https://github.com/friendlyarm/friendlywrt_manifests -b master-v${{ matrix.VERSION }} \
-                -m rk3399.xml --repo-url=https://github.com/friendlyarm/repo  --no-clone-bundle
+                -m rk3399.xml --repo-url=https://github.com/friendlyarm/repo --no-clone-bundle
 
         repo sync -c friendlywrt --no-clone-bundle
         repo sync -c configs --no-clone-bundle
         repo sync -c device/common --no-clone-bundle
         repo sync -c device/friendlyelec --no-clone-bundle
         repo sync -c scripts --no-clone-bundle
-        repo sync -c scripts/sd-fuse  --no-clone-bundle
-        repo sync -c toolchain  --no-clone-bundle
+        repo sync -c scripts/sd-fuse --no-clone-bundle
+        repo sync -c toolchain --no-clone-bundle
 
     - name: Apply customizations
       run: |
@@ -84,13 +83,11 @@ jobs:
     - name: Prepare dot config and feeds
       run: |
         cd project
-        [ "${{ matrix.SET }}" == "docker" ] && SUFFIX="-docker"
-        DIST_DIR=friendlywrt$(echo ${{ matrix.VERSION }}|awk -F . '{print $1}')${SUFFIX}
-        CONFIG=rockchip${SUFFIX}
+        DIST_DIR=friendlywrt$(echo ${{ matrix.VERSION }} | awk -F . '{print $1}')
         cat > .current_config.mk <<EOL
         . device/friendlyelec/rk3399/base.mk
         TARGET_IMAGE_DIRNAME=${DIST_DIR}
-        TARGET_FRIENDLYWRT_CONFIG=${CONFIG}
+        TARGET_FRIENDLYWRT_CONFIG=rockchip
         EOL
         DEBUG_DOT_CONFIG=1 ./build.sh friendlywrt
 
@@ -122,20 +119,18 @@ jobs:
       run: |
         cd project
         source .current_config.mk
-        [ "${{ matrix.SET }}" == "docker" ] && SUFFIX="-docker"
-        rootfs_filename="rootfs-friendlywrt-${{ matrix.VERSION }}${SUFFIX}.tgz"
+        rootfs_filename="rootfs-friendlywrt-${{ matrix.VERSION }}.tgz"
         tar czf ../artifact/${rootfs_filename} ${FRIENDLYWRT_SRC}/${FRIENDLYWRT_ROOTFS} \
               ${FRIENDLYWRT_SRC}/${FRIENDLYWRT_PACKAGE_DIR}
         echo "rootfs_filename=$rootfs_filename" >> $GITHUB_OUTPUT
 
     - name: Create host package-manager bundle
       id: create_host_pm_package
-      if: matrix.SET == 'non-docker'
       run: |
         cd project
         source .current_config.mk
         PM_BIN=
-        [ -f ${FRIENDLYWRT_SRC}/staging_dir/host/bin/apk ]  && PM_BIN=${FRIENDLYWRT_SRC}/staging_dir/host/bin/apk
+        [ -f ${FRIENDLYWRT_SRC}/staging_dir/host/bin/apk ] && PM_BIN=${FRIENDLYWRT_SRC}/staging_dir/host/bin/apk
         [ -f ${FRIENDLYWRT_SRC}/staging_dir/host/bin/opkg ] && PM_BIN=${FRIENDLYWRT_SRC}/staging_dir/host/bin/opkg
         if [ -z "$PM_BIN" ]; then
           echo "ERROR: neither apk nor opkg found under ${FRIENDLYWRT_SRC}/staging_dir/host/bin/"
@@ -171,7 +166,6 @@ jobs:
         overwrite: true
 
     - name: Upload host package-manager bundle
-      if: matrix.SET == 'non-docker'
       uses: svenstaro/upload-release-action@v2
       with:
         repo_token: ${{ secrets.GITHUB_TOKEN }}
@@ -189,7 +183,6 @@ jobs:
       matrix:
         VERSION: ['25.12']
         CPU: [rk3328, rk3528, rk3399, rk3566, rk3568, rk3576, rk3588]
-        SET: [docker, non-docker]
     steps:
     - name: Checkout
       uses: actions/checkout@v4
@@ -220,7 +213,7 @@ jobs:
         mkdir project
         cd project
         repo init --depth=1 -u https://github.com/friendlyarm/friendlywrt_manifests -b master-v${{ matrix.VERSION }} \
-                -m ${{ matrix.CPU }}.xml --repo-url=https://github.com/friendlyarm/repo  --no-clone-bundle
+                -m ${{ matrix.CPU }}.xml --repo-url=https://github.com/friendlyarm/repo --no-clone-bundle
 
         repo sync -c kernel --no-clone-bundle
         repo sync -c u-boot --no-clone-bundle
@@ -229,11 +222,10 @@ jobs:
         repo sync -c device/common --no-clone-bundle
         repo sync -c device/friendlyelec --no-clone-bundle
         repo sync -c scripts --no-clone-bundle
-        repo sync -c scripts/sd-fuse  --no-clone-bundle
-        repo sync -c toolchain  --no-clone-bundle
+        repo sync -c scripts/sd-fuse --no-clone-bundle
+        repo sync -c toolchain --no-clone-bundle
 
-    - name: Download friendlywrt rootfs (non-docker)
-      if: matrix.SET == 'non-docker'
+    - name: Download friendlywrt rootfs
       uses: robinraju/release-downloader@v1.6
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -241,16 +233,6 @@ jobs:
         repository: ${{ github.repository }}
         tag: ${{ needs.prepare_release.outputs.release_tag }}
         fileName: "rootfs-friendlywrt-${{ matrix.VERSION }}.tgz"
-
-    - name: Download friendlywrt rootfs (docker)
-      if: matrix.SET == 'docker'
-      uses: robinraju/release-downloader@v1.6
-      env:
-        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-      with:
-        repository: ${{ github.repository }}
-        tag: ${{ needs.prepare_release.outputs.release_tag }}
-        fileName: "rootfs-friendlywrt-${{ matrix.VERSION }}-docker.tgz"
 
     - name: Download host package-manager bundle
       uses: robinraju/release-downloader@v1.6
@@ -292,29 +274,25 @@ jobs:
           exit 1
           ;;
         esac
-        [ "${{ matrix.SET }}" == "docker" ] && SUFFIX="-docker"
-        IMG_FILE=${MODEL}-FriendlyWrt-${{ matrix.VERSION }}${SUFFIX}.img
-        TGZ_FILE=images-${MODEL}-FriendlyWrt-${{ matrix.VERSION }}${SUFFIX}.tgz
-        DIST_DIR=friendlywrt$(echo ${{ matrix.VERSION }}|awk -F . '{print $1}')${SUFFIX}
+        IMG_FILE=${MODEL}-FriendlyWrt-${{ matrix.VERSION }}.img
+        TGZ_FILE=images-${MODEL}-FriendlyWrt-${{ matrix.VERSION }}.tgz
+        DIST_DIR=friendlywrt$(echo ${{ matrix.VERSION }} | awk -F . '{print $1}')
 
-        CONFIG=rockchip${SUFFIX}
         cat > .current_config.mk <<EOL
         . device/friendlyelec/${{ matrix.CPU }}/base.mk
         TARGET_IMAGE_DIRNAME=${DIST_DIR}
-        TARGET_FRIENDLYWRT_CONFIG=${CONFIG}
+        TARGET_FRIENDLYWRT_CONFIG=rockchip
         TARGET_SD_RAW_FILENAME=${IMG_FILE}
         EOL
 
         echo "img_filename=$IMG_FILE" >> $GITHUB_OUTPUT
         echo "archive_filename=$TGZ_FILE" >> $GITHUB_OUTPUT
         echo "dist_dir=$DIST_DIR" >> $GITHUB_OUTPUT
-        echo "suffix=$SUFFIX" >> $GITHUB_OUTPUT
 
     - name: Unpack friendlywrt rootfs
       run: |
         cd project
-        SUFFIX="${{ steps.config.outputs.suffix }}"
-        tar xzf "../rootfs-friendlywrt-${{ matrix.VERSION }}${SUFFIX}.tgz"
+        tar xzf "../rootfs-friendlywrt-${{ matrix.VERSION }}.tgz"
 
     - name: Unpack host package-manager bundle
       run: |
