@@ -285,6 +285,15 @@ jobs:
         TARGET_SD_RAW_FILENAME=${IMG_FILE}
         EOL
 
+        if [ "${{ matrix.CPU }}" = "rk3528" ]; then
+          cat >> .current_config.mk <<'EOL'
+        ENABLE_OPT_PARTITION=false
+        TARGET_ROOTFS_PARTSIZE=512
+        TARGET_USERDATA_PARTSIZE=0
+        TARGET_SD_IMAGESIZE=1024
+        EOL
+        fi
+
         echo "img_filename=$IMG_FILE" >> $GITHUB_OUTPUT
         echo "archive_filename=$TGZ_FILE" >> $GITHUB_OUTPUT
         echo "dist_dir=$DIST_DIR" >> $GITHUB_OUTPUT
