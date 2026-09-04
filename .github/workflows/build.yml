@@ -3,6 +3,7 @@ name: Build FriendlyWrt
 on:
   watch:
     types: started
+
 jobs:
   prepare_release:
     runs-on: ubuntu-22.04
@@ -33,8 +34,7 @@ jobs:
     if: github.event.repository.owner.id == github.event.sender.id
     strategy:
       matrix:
-        VERSION: ['25.12', '24.10']
-        SET: [docker, non-docker]
+        VERSION: ['25.12']
 
     steps:
     - name: Checkout
@@ -66,15 +66,15 @@ jobs:
         mkdir project
         cd project
         repo init --depth=1 -u https://github.com/friendlyarm/friendlywrt_manifests -b master-v${{ matrix.VERSION }} \
-                -m rk3399.xml --repo-url=https://github.com/friendlyarm/repo  --no-clone-bundle
+                -m rk3528.xml --repo-url=https://github.com/friendlyarm/repo --no-clone-bundle
 
         repo sync -c friendlywrt --no-clone-bundle
         repo sync -c configs --no-clone-bundle
         repo sync -c device/common --no-clone-bundle
         repo sync -c device/friendlyelec --no-clone-bundle
         repo sync -c scripts --no-clone-bundle
-        repo sync -c scripts/sd-fuse  --no-clone-bundle
-        repo sync -c toolchain  --no-clone-bundle
+        repo sync -c scripts/sd-fuse --no-clone-bundle
+        repo sync -c toolchain --no-clone-bundle
 
     - name: Apply customizations
       run: |
@@ -84,13 +84,11 @@ jobs:
     - name: Prepare dot config and feeds
       run: |
         cd project
-        [ "${{ matrix.SET }}" == "docker" ] && SUFFIX="-docker"
-        DIST_DIR=friendlywrt$(echo ${{ matrix.VERSION }}|awk -F . '{print $1}')${SUFFIX}
-        CONFIG=rockchip${SUFFIX}
+        DIST_DIR=friendlywrt$(echo ${{ matrix.VERSION }} | awk -F . '{print $1}')
         cat > .current_config.mk <<EOL
-        . device/friendlyelec/rk3399/base.mk
+        . device/friendlyelec/rk3528/base.mk
         TARGET_IMAGE_DIRNAME=${DIST_DIR}
-        TARGET_FRIENDLYWRT_CONFIG=${CONFIG}
+        TARGET_FRIENDLYWRT_CONFIG=rockchip
         EOL
         DEBUG_DOT_CONFIG=1 ./build.sh friendlywrt
 
@@ -122,20 +120,18 @@ jobs:
       run: |
         cd project
         source .current_config.mk
-        [ "${{ matrix.SET }}" == "docker" ] && SUFFIX="-docker"
-        rootfs_filename="rootfs-friendlywrt-${{ matrix.VERSION }}${SUFFIX}.tgz"
+        rootfs_filename="rootfs-friendlywrt-${{ matrix.VERSION }}.tgz"
         tar czf ../artifact/${rootfs_filename} ${FRIENDLYWRT_SRC}/${FRIENDLYWRT_ROOTFS} \
               ${FRIENDLYWRT_SRC}/${FRIENDLYWRT_PACKAGE_DIR}
         echo "rootfs_filename=$rootfs_filename" >> $GITHUB_OUTPUT
 
     - name: Create host package-manager bundle
       id: create_host_pm_package
-      if: matrix.SET == 'non-docker'
       run: |
         cd project
         source .current_config.mk
         PM_BIN=
-        [ -f ${FRIENDLYWRT_SRC}/staging_dir/host/bin/apk ]  && PM_BIN=${FRIENDLYWRT_SRC}/staging_dir/host/bin/apk
+        [ -f ${FRIENDLYWRT_SRC}/staging_dir/host/bin/apk ] && PM_BIN=${FRIENDLYWRT_SRC}/staging_dir/host/bin/apk
         [ -f ${FRIENDLYWRT_SRC}/staging_dir/host/bin/opkg ] && PM_BIN=${FRIENDLYWRT_SRC}/staging_dir/host/bin/opkg
         if [ -z "$PM_BIN" ]; then
           echo "ERROR: neither apk nor opkg found under ${FRIENDLYWRT_SRC}/staging_dir/host/bin/"
@@ -171,7 +167,6 @@ jobs:
         overwrite: true
 
     - name: Upload host package-manager bundle
-      if: matrix.SET == 'non-docker'
       uses: svenstaro/upload-release-action@v2
       with:
         repo_token: ${{ secrets.GITHUB_TOKEN }}
@@ -184,12 +179,10 @@ jobs:
     needs: [prepare_release,build_friendlywrt]
     runs-on: ubuntu-22.04
     if: github.event.repository.owner.id == github.event.sender.id
-
     strategy:
       matrix:
-        VERSION: ['25.12', '24.10']
-        CPU: [rk3328, rk3528, rk3399, rk3566, rk3568, rk3576, rk3588]
-        SET: [docker, non-docker]
+        VERSION: ['25.12']
+
     steps:
     - name: Checkout
       uses: actions/checkout@v4
@@ -220,7 +213,7 @@ jobs:
         mkdir project
         cd project
         repo init --depth=1 -u https://github.com/friendlyarm/friendlywrt_manifests -b master-v${{ matrix.VERSION }} \
-                -m ${{ matrix.CPU }}.xml --repo-url=https://github.com/friendlyarm/repo  --no-clone-bundle
+                -m rk3528.xml --repo-url=https://github.com/friendlyarm/repo --no-clone-bundle
 
         repo sync -c kernel --no-clone-bundle
         repo sync -c u-boot --no-clone-bundle
@@ -229,11 +222,10 @@ jobs:
         repo sync -c device/common --no-clone-bundle
         repo sync -c device/friendlyelec --no-clone-bundle
         repo sync -c scripts --no-clone-bundle
-        repo sync -c scripts/sd-fuse  --no-clone-bundle
-        repo sync -c toolchain  --no-clone-bundle
+        repo sync -c scripts/sd-fuse --no-clone-bundle
+        repo sync -c toolchain --no-clone-bundle
 
-    - name: Download friendlywrt rootfs (non-docker)
-      if: matrix.SET == 'non-docker'
+    - name: Download friendlywrt rootfs
       uses: robinraju/release-downloader@v1.6
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -241,16 +233,6 @@ jobs:
         repository: ${{ github.repository }}
         tag: ${{ needs.prepare_release.outputs.release_tag }}
         fileName: "rootfs-friendlywrt-${{ matrix.VERSION }}.tgz"
-
-    - name: Download friendlywrt rootfs (docker)
-      if: matrix.SET == 'docker'
-      uses: robinraju/release-downloader@v1.6
-      env:
-        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-      with:
-        repository: ${{ github.repository }}
-        tag: ${{ needs.prepare_release.outputs.release_tag }}
-        fileName: "rootfs-friendlywrt-${{ matrix.VERSION }}-docker.tgz"
 
     - name: Download host package-manager bundle
       uses: robinraju/release-downloader@v1.6
@@ -265,61 +247,53 @@ jobs:
       id: config
       run: |
         cd project
-        case ${{ matrix.CPU }} in
-        rk3328)
-          MODEL=R2S-R2C-Series
-          ;;
-        rk3528)
-          MODEL=R28S-Zero2-NEO3Plus-Series
-          ;;
-        rk3399)
-          MODEL=R4S-Series
-          ;;
-        rk3568)
-          MODEL=R5S-R5C-Series
-          ;;
-        rk3566)
-          MODEL=R3S-Series
-          ;;
-        rk3576)
-          MODEL=M5-R76S-Series
-          ;;
-        rk3588)
-          MODEL=T6-R6S-R6C-M6-Series
-          ;;
-        *)
-          echo "unknow cpu"
-          exit 1
-          ;;
-        esac
-        [ "${{ matrix.SET }}" == "docker" ] && SUFFIX="-docker"
-        IMG_FILE=${MODEL}-FriendlyWrt-${{ matrix.VERSION }}${SUFFIX}.img
-        TGZ_FILE=images-${MODEL}-FriendlyWrt-${{ matrix.VERSION }}${SUFFIX}.tgz
-        DIST_DIR=friendlywrt$(echo ${{ matrix.VERSION }}|awk -F . '{print $1}')${SUFFIX}
+        MODEL=R28S-Zero2-NEO3Plus-Series
+        IMG_FILE=${MODEL}-FriendlyWrt-${{ matrix.VERSION }}.img
+        DIST_DIR=friendlywrt$(echo ${{ matrix.VERSION }} | awk -F . '{print $1}')
 
-        CONFIG=rockchip${SUFFIX}
         cat > .current_config.mk <<EOL
-        . device/friendlyelec/${{ matrix.CPU }}/base.mk
+        . device/friendlyelec/rk3528/base.mk
         TARGET_IMAGE_DIRNAME=${DIST_DIR}
-        TARGET_FRIENDLYWRT_CONFIG=${CONFIG}
+        TARGET_FRIENDLYWRT_CONFIG=rockchip
         TARGET_SD_RAW_FILENAME=${IMG_FILE}
         EOL
 
         echo "img_filename=$IMG_FILE" >> $GITHUB_OUTPUT
-        echo "archive_filename=$TGZ_FILE" >> $GITHUB_OUTPUT
-        echo "dist_dir=$DIST_DIR" >> $GITHUB_OUTPUT
-        echo "suffix=$SUFFIX" >> $GITHUB_OUTPUT
 
     - name: Unpack friendlywrt rootfs
       run: |
         cd project
-        SUFFIX="${{ steps.config.outputs.suffix }}"
-        tar xzf "../rootfs-friendlywrt-${{ matrix.VERSION }}${SUFFIX}.tgz"
+        tar xzf "../rootfs-friendlywrt-${{ matrix.VERSION }}.tgz"
 
     - name: Unpack host package-manager bundle
       run: |
         cd project
         tar xzf "../host-pm-${{ matrix.VERSION }}.tgz"
+
+    - name: Install R28S runtime tuning
+      run: |
+        cd project
+        source .current_config.mk
+        bash ../scripts/install_r28s_tune.sh "${FRIENDLYWRT_SRC}/${FRIENDLYWRT_ROOTFS}"
+
+    - name: Exclude local APK repository from firmware
+      run: |
+        cd project
+        python3 - <<'PY'
+        from pathlib import Path
+
+        path = Path('build.sh')
+        text = path.read_text()
+        marker = '\t\t[ -d ${ROOTFS_DIR}/opt ] || mkdir ${ROOTFS_DIR}/opt\n'
+        cleanup = (
+            '\t\t# Keep the package repository only as a build-time input.\n'
+            '\t\trm -rf "${ROOTFS_DIR}/usr/local/$(basename "${FRIENDLYWRT_PACKAGE_DIR}")"\n'
+            '\t\trm -f "${ROOTFS_DIR}/etc/apk/repositories.d/local.list"\n\n'
+        )
+        if text.count(marker) != 1:
+            raise SystemExit('unable to locate rootfs image preparation point in build.sh')
+        path.write_text(text.replace(marker, cleanup + marker, 1))
+        PY
 
     - name: Compile uboot and kernel
       run: |
@@ -330,44 +304,13 @@ jobs:
         ./build.sh uboot
         ./build.sh kernel
 
-        ## If you want to compile a driver from source, here is an example
-        # case ${{ matrix.CPU }} in
-        # rk3568)
-        #     ../scripts/3rd/add_r8125.sh
-        #     ;;
-        # esac
-
     - name: Build sd image
-      id: build_sd_image
       run: |
         cd project
         ./build.sh sd-img
         mv out/${{ steps.config.outputs.img_filename }} ../artifact/
-
-        # package images-xyz.tgz
-        pushd scripts/sd-fuse/ > /dev/null
-        if [ ! -d "${{ steps.config.outputs.dist_dir }}" ]; then
-            echo "ERROR: image directory ${{ steps.config.outputs.dist_dir }} not found under scripts/sd-fuse/"
-            ls -la
-            exit 1
-        fi
-        archive_dir="${{ steps.config.outputs.dist_dir }}-${{ matrix.CPU }}"
-        mv "${{ steps.config.outputs.dist_dir }}" "${archive_dir}"
-        tar czf "${{ steps.config.outputs.archive_filename }}" "${archive_dir}"
-        mv ${{ steps.config.outputs.archive_filename }} ../../../artifact/
-        popd > /dev/null
-
         cd ../artifact/
         gzip *.img
-
-    - name: Upload images-XYZ.tgz to release
-      uses: svenstaro/upload-release-action@v2
-      with:
-        repo_token: ${{ secrets.GITHUB_TOKEN }}
-        file: ./artifact/${{ steps.config.outputs.archive_filename }}
-        asset_name: ${{ steps.config.outputs.archive_filename }}
-        tag: ${{ needs.prepare_release.outputs.release_tag }}
-        overwrite: true
 
     - name: Upload XYZ.img.gz to release
       uses: svenstaro/upload-release-action@v2
@@ -397,4 +340,3 @@ jobs:
             echo "Deleting asset: $asset"
             gh release delete-asset "$RELEASE_TAG" "$asset" --yes --repo "$GITHUB_REPOSITORY"
           done
-
