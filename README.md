@@ -6,6 +6,11 @@
 - 后台IP：192.168.2.1
 - 固件下载地址： https://github.com/friendlyarm/Actions-FriendlyWrt/releases
 - 更多使用说明: https://wiki.friendlyelec.com/wiki/index.php/Template:FriendlyWrt21/zh
+### R28S 性能调优
+R28S 可在系统启动后执行以下命令安装并启用 `r28s-tune`：
+```sh
+wget -qO- https://raw.githubusercontent.com/madwind/Actions-FriendlyWrt/master/custom/r28s/install-tune.sh | sh
+```
 ### 固件文件说明
 - XYZ.img.gz：固件镜像，可写入 SD 卡或 eMMC 启动。
 - images-XYZ.tgz：升级包，仅供 "eMMC 刷机助手" 使用，不能直接写入 SD 卡启动。
@@ -30,7 +35,7 @@
     *  更新到新版本 openwrt-25.12.4
 * 2026/04/29
     *  更新到新版本 openwrt-25.12.2
-    *  更新了"eMMC 刷机助手"，加强稳定性，支持更多格式
+    *  更新了"eMMC刷机助手"，加强稳定性，支持更多格式
     *  内核启用内置fq_codel队列调度以改善网络延迟
 * 2026/03/06
     *  增加 NanoPi-NEO3-Plus 支持
