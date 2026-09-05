@@ -10,7 +10,6 @@ if ! command -v ethtool >/dev/null 2>&1; then
     if command -v apk >/dev/null 2>&1; then
         apk add ethtool
     elif command -v opkg >/dev/null 2>&1; then
-        opkg update
         opkg install ethtool
     else
         echo "Warning: ethtool is not available and no supported package manager was found." >&2
