@@ -4,8 +4,6 @@ set -euo pipefail
 CONFIGS=(
   "CONFIG_NET_ACT_CT=m"
   "CONFIG_NET_ACT_CTINFO=m"
-  "CONFIG_SOUND=n"
-  "CONFIG_SND=n"
 )
 
 source .current_config.mk
