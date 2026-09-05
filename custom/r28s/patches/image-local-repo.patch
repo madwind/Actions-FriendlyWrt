@@ -1,0 +1,14 @@
+diff --git a/build.sh b/build.sh
+--- a/build.sh
++++ b/build.sh
+@@ -296,6 +296,10 @@ function prepare_image_for_friendlyelec_eflasher(){
+ 		fi
+ 	fi
+ 
++	# Keep the local package repository only as a build-time input.
++	rm -rf "${ROOTFS_DIR}/usr/local/$(basename "${PKG_DIR}")"
++	rm -f "${ROOTFS_DIR}/etc/apk/repositories.d/local.list"
++
+ 	local BOOT_DIR=$(mktemp -d ${SDFUSE_DIR}/out/boot.XXXXXXXXX)
+ 
+ 	# prepare uboot bin, boot.img and rootfs.img

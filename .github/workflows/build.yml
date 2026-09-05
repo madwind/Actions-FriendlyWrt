@@ -3,19 +3,27 @@ name: Build FriendlyWrt
 on:
   watch:
     types: started
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+env:
+  VERSION: '25.12'
+  MODEL: R28S-Zero2-NEO3Plus-Series
+
 jobs:
   prepare_release:
     runs-on: ubuntu-22.04
-    if: github.event.repository.owner.id == github.event.sender.id
+    if: github.event_name == 'workflow_dispatch' || github.event.repository.owner.id == github.event.sender.id
     steps:
     - name: Get release tag
       id: release_tag
       run: |
         release_tag="FriendlyWrt-$(date +%Y-%m-%d)"
-        echo "release_tag=$release_tag" >> $GITHUB_OUTPUT
+        echo "release_tag=$release_tag" >> "$GITHUB_OUTPUT"
 
     - name: Create empty release
-      id: release
       uses: softprops/action-gh-release@v1
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -25,73 +33,26 @@ jobs:
         prerelease: false
     outputs:
       release_tag: ${{ steps.release_tag.outputs.release_tag }}
-      upload_url: ${{ steps.release.outputs.upload_url }}
 
   build_friendlywrt:
     needs: prepare_release
     runs-on: ubuntu-22.04
-    if: github.event.repository.owner.id == github.event.sender.id
-    strategy:
-      matrix:
-        VERSION: ['25.12', '24.10']
-        SET: [docker, non-docker]
-
+    if: github.event_name == 'workflow_dispatch' || github.event.repository.owner.id == github.event.sender.id
     steps:
     - name: Checkout
       uses: actions/checkout@v4
 
     - name: Initialization environment
-      env:
-        DEBIAN_FRONTEND: noninteractive
-      run: |
-        sudo rm -rf /etc/apt/sources.list.d
-        wget https://raw.githubusercontent.com/friendlyarm/build-env-on-ubuntu-bionic/master/install.sh
-        sed -i -e 's/^apt-get -y install openjdk-8-jdk/# apt-get -y install openjdk-8-jdk/g' install.sh
-        sed -i -e 's/^\[ -d fa-toolchain \]/# [ -d fa-toolchain ]/g' install.sh
-        sed -i -e 's/^(cat fa-toolchain/# (cat fa-toolchain/g' install.sh
-        sed -i -e 's/^(tar xf fa-toolchain/# (tar xf fa-toolchain/g' install.sh
-        sudo -E bash ./install.sh
-        git config --global user.name 'GitHub Actions'
-        git config --global user.email 'noreply@github.com'
-        git config --global color.ui false
-        git clone https://github.com/friendlyarm/repo
-        sudo -E cp repo/repo /usr/bin/
-        mkdir -p ./artifact
-        sudo swapoff -a || true
-        sudo rm -rf /usr/share/dotnet /usr/local/lib/android/sdk /usr/local/share/boost /opt/ghc 2>/dev/null || true
-        echo "cores: $(nproc)"
+      run: bash custom/r28s/host.sh setup
 
     - name: Download source
-      run: |
-        mkdir project
-        cd project
-        repo init --depth=1 -u https://github.com/friendlyarm/friendlywrt_manifests -b master-v${{ matrix.VERSION }} \
-                -m rk3399.xml --repo-url=https://github.com/friendlyarm/repo  --no-clone-bundle
+      run: bash custom/r28s/host.sh sync friendlywrt
 
-        repo sync -c friendlywrt --no-clone-bundle
-        repo sync -c configs --no-clone-bundle
-        repo sync -c device/common --no-clone-bundle
-        repo sync -c device/friendlyelec --no-clone-bundle
-        repo sync -c scripts --no-clone-bundle
-        repo sync -c scripts/sd-fuse  --no-clone-bundle
-        repo sync -c toolchain  --no-clone-bundle
-
-    - name: Apply customizations
+    - name: Apply R28S configuration
       run: |
         cd project
-        source ../scripts/custome_config.sh
-
-    - name: Prepare dot config and feeds
-      run: |
-        cd project
-        [ "${{ matrix.SET }}" == "docker" ] && SUFFIX="-docker"
-        DIST_DIR=friendlywrt$(echo ${{ matrix.VERSION }}|awk -F . '{print $1}')${SUFFIX}
-        CONFIG=rockchip${SUFFIX}
-        cat > .current_config.mk <<EOL
-        . device/friendlyelec/rk3399/base.mk
-        TARGET_IMAGE_DIRNAME=${DIST_DIR}
-        TARGET_FRIENDLYWRT_CONFIG=${CONFIG}
-        EOL
+        source ../custom/r28s/config.sh
+        bash ../custom/r28s/artifacts.sh write-config
         DEBUG_DOT_CONFIG=1 ./build.sh friendlywrt
 
     - name: Download package
@@ -101,7 +62,7 @@ jobs:
         find dl -size -1024c -exec ls -l {} \;
         find dl -size -1024c -exec rm -f {} \;
 
-    - name: Compile friendlyWrt
+    - name: Compile FriendlyWrt
       id: compile
       continue-on-error: true
       run: |
@@ -117,284 +78,142 @@ jobs:
         cd project/friendlywrt
         make -j1 V=s
 
-    - name: Create rootfs package
-      id: create_rootfs_package
-      run: |
-        cd project
-        source .current_config.mk
-        [ "${{ matrix.SET }}" == "docker" ] && SUFFIX="-docker"
-        rootfs_filename="rootfs-friendlywrt-${{ matrix.VERSION }}${SUFFIX}.tgz"
-        tar czf ../artifact/${rootfs_filename} ${FRIENDLYWRT_SRC}/${FRIENDLYWRT_ROOTFS} \
-              ${FRIENDLYWRT_SRC}/${FRIENDLYWRT_PACKAGE_DIR}
-        echo "rootfs_filename=$rootfs_filename" >> $GITHUB_OUTPUT
+    - name: Package FriendlyWrt products
+      run: bash custom/r28s/artifacts.sh package-friendlywrt
 
-    - name: Create host package-manager bundle
-      id: create_host_pm_package
-      if: matrix.SET == 'non-docker'
-      run: |
-        cd project
-        source .current_config.mk
-        PM_BIN=
-        [ -f ${FRIENDLYWRT_SRC}/staging_dir/host/bin/apk ]  && PM_BIN=${FRIENDLYWRT_SRC}/staging_dir/host/bin/apk
-        [ -f ${FRIENDLYWRT_SRC}/staging_dir/host/bin/opkg ] && PM_BIN=${FRIENDLYWRT_SRC}/staging_dir/host/bin/opkg
-        if [ -z "$PM_BIN" ]; then
-          echo "ERROR: neither apk nor opkg found under ${FRIENDLYWRT_SRC}/staging_dir/host/bin/"
-          exit 1
-        fi
-        echo "Detected host package manager: $PM_BIN"
-
-        ldd_out=$(ldd "$PM_BIN" 2>&1 || true)
-        echo "$ldd_out"
-        if ! echo "$ldd_out" | grep -q "not a dynamic executable"; then
-          bad_paths=$(echo "$ldd_out" | grep -oE '=> /[^ ]+' | sed 's|=> ||' \
-                       | grep -vE '^/(lib|lib64|usr/lib)/' || true)
-          not_found=$(echo "$ldd_out" | grep -F "not found" || true)
-          if [ -n "$bad_paths" ] || [ -n "$not_found" ]; then
-            echo "ERROR: $PM_BIN has non-portable dynamic dependencies:"
-            [ -n "$bad_paths" ] && { echo "non-system paths:"; echo "$bad_paths"; }
-            [ -n "$not_found" ] && { echo "unresolved:"; echo "$not_found"; }
-            exit 1
-          fi
-        fi
-
-        host_pm_filename="host-pm-${{ matrix.VERSION }}.tgz"
-        tar czf ../artifact/${host_pm_filename} "$PM_BIN"
-        echo "host_pm_filename=$host_pm_filename" >> $GITHUB_OUTPUT
-
-    - name: Upload rootfs package
-      uses: svenstaro/upload-release-action@v2
+    - name: Upload FriendlyWrt build products
+      uses: actions/upload-artifact@v4
       with:
-        repo_token: ${{ secrets.GITHUB_TOKEN }}
-        file: ./artifact/${{ steps.create_rootfs_package.outputs.rootfs_filename }}
-        asset_name: ${{ steps.create_rootfs_package.outputs.rootfs_filename }}
-        tag: ${{ needs.prepare_release.outputs.release_tag }}
-        overwrite: true
+        name: friendlywrt-${{ env.VERSION }}
+        path: |
+          artifact/rootfs-friendlywrt-${{ env.VERSION }}.tgz
+          artifact/host-pm-${{ env.VERSION }}.tgz
+        if-no-files-found: error
+        retention-days: 1
+        compression-level: 0
 
-    - name: Upload host package-manager bundle
-      if: matrix.SET == 'non-docker'
-      uses: svenstaro/upload-release-action@v2
-      with:
-        repo_token: ${{ secrets.GITHUB_TOKEN }}
-        file: ./artifact/${{ steps.create_host_pm_package.outputs.host_pm_filename }}
-        asset_name: ${{ steps.create_host_pm_package.outputs.host_pm_filename }}
-        tag: ${{ needs.prepare_release.outputs.release_tag }}
-        overwrite: true
-
-  build_img:
-    needs: [prepare_release,build_friendlywrt]
+  build_uboot:
+    needs: prepare_release
     runs-on: ubuntu-22.04
-    if: github.event.repository.owner.id == github.event.sender.id
-
-    strategy:
-      matrix:
-        VERSION: ['25.12', '24.10']
-        CPU: [rk3328, rk3528, rk3399, rk3566, rk3568, rk3576, rk3588]
-        SET: [docker, non-docker]
+    if: github.event_name == 'workflow_dispatch' || github.event.repository.owner.id == github.event.sender.id
     steps:
     - name: Checkout
       uses: actions/checkout@v4
 
     - name: Initialization environment
-      env:
-        DEBIAN_FRONTEND: noninteractive
-      run: |
-        sudo rm -rf /etc/apt/sources.list.d
-        wget https://raw.githubusercontent.com/friendlyarm/build-env-on-ubuntu-bionic/master/install.sh
-        sed -i -e 's/^apt-get -y install openjdk-8-jdk/# apt-get -y install openjdk-8-jdk/g' install.sh
-        sed -i -e 's/^\[ -d fa-toolchain \]/# [ -d fa-toolchain ]/g' install.sh
-        sed -i -e 's/^(cat fa-toolchain/# (cat fa-toolchain/g' install.sh
-        sed -i -e 's/^(tar xf fa-toolchain/# (tar xf fa-toolchain/g' install.sh
-        sudo -E bash ./install.sh
-        git config --global user.name 'GitHub Actions'
-        git config --global user.email 'noreply@github.com'
-        git config --global color.ui false
-        git clone https://github.com/friendlyarm/repo
-        sudo -E cp repo/repo /usr/bin/
-        mkdir -p ./artifact
-        sudo swapoff -a || true
-        sudo rm -rf /usr/share/dotnet /usr/local/lib/android/sdk /usr/local/share/boost /opt/ghc 2>/dev/null || true
-        echo "cores: $(nproc)"
+      run: bash custom/r28s/host.sh setup
 
     - name: Download source
-      run: |
-        mkdir project
-        cd project
-        repo init --depth=1 -u https://github.com/friendlyarm/friendlywrt_manifests -b master-v${{ matrix.VERSION }} \
-                -m ${{ matrix.CPU }}.xml --repo-url=https://github.com/friendlyarm/repo  --no-clone-bundle
-
-        repo sync -c kernel --no-clone-bundle
-        repo sync -c u-boot --no-clone-bundle
-        repo sync -c rkbin --no-clone-bundle
-        repo sync -c configs --no-clone-bundle
-        repo sync -c device/common --no-clone-bundle
-        repo sync -c device/friendlyelec --no-clone-bundle
-        repo sync -c scripts --no-clone-bundle
-        repo sync -c scripts/sd-fuse  --no-clone-bundle
-        repo sync -c toolchain  --no-clone-bundle
-
-    - name: Download friendlywrt rootfs (non-docker)
-      if: matrix.SET == 'non-docker'
-      uses: robinraju/release-downloader@v1.6
-      env:
-        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-      with:
-        repository: ${{ github.repository }}
-        tag: ${{ needs.prepare_release.outputs.release_tag }}
-        fileName: "rootfs-friendlywrt-${{ matrix.VERSION }}.tgz"
-
-    - name: Download friendlywrt rootfs (docker)
-      if: matrix.SET == 'docker'
-      uses: robinraju/release-downloader@v1.6
-      env:
-        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-      with:
-        repository: ${{ github.repository }}
-        tag: ${{ needs.prepare_release.outputs.release_tag }}
-        fileName: "rootfs-friendlywrt-${{ matrix.VERSION }}-docker.tgz"
-
-    - name: Download host package-manager bundle
-      uses: robinraju/release-downloader@v1.6
-      env:
-        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-      with:
-        repository: ${{ github.repository }}
-        tag: ${{ needs.prepare_release.outputs.release_tag }}
-        fileName: "host-pm-${{ matrix.VERSION }}.tgz"
+      run: bash custom/r28s/host.sh sync uboot
 
     - name: Prepare config
-      id: config
+      run: bash custom/r28s/artifacts.sh write-config
+
+    - name: Compile U-Boot
       run: |
         cd project
-        case ${{ matrix.CPU }} in
-        rk3328)
-          MODEL=R2S-R2C-Series
-          ;;
-        rk3528)
-          MODEL=R28S-Zero2-NEO3Plus-Series
-          ;;
-        rk3399)
-          MODEL=R4S-Series
-          ;;
-        rk3568)
-          MODEL=R5S-R5C-Series
-          ;;
-        rk3566)
-          MODEL=R3S-Series
-          ;;
-        rk3576)
-          MODEL=M5-R76S-Series
-          ;;
-        rk3588)
-          MODEL=T6-R6S-R6C-M6-Series
-          ;;
-        *)
-          echo "unknow cpu"
-          exit 1
-          ;;
-        esac
-        [ "${{ matrix.SET }}" == "docker" ] && SUFFIX="-docker"
-        IMG_FILE=${MODEL}-FriendlyWrt-${{ matrix.VERSION }}${SUFFIX}.img
-        TGZ_FILE=images-${MODEL}-FriendlyWrt-${{ matrix.VERSION }}${SUFFIX}.tgz
-        DIST_DIR=friendlywrt$(echo ${{ matrix.VERSION }}|awk -F . '{print $1}')${SUFFIX}
-
-        CONFIG=rockchip${SUFFIX}
-        cat > .current_config.mk <<EOL
-        . device/friendlyelec/${{ matrix.CPU }}/base.mk
-        TARGET_IMAGE_DIRNAME=${DIST_DIR}
-        TARGET_FRIENDLYWRT_CONFIG=${CONFIG}
-        TARGET_SD_RAW_FILENAME=${IMG_FILE}
-        EOL
-
-        echo "img_filename=$IMG_FILE" >> $GITHUB_OUTPUT
-        echo "archive_filename=$TGZ_FILE" >> $GITHUB_OUTPUT
-        echo "dist_dir=$DIST_DIR" >> $GITHUB_OUTPUT
-        echo "suffix=$SUFFIX" >> $GITHUB_OUTPUT
-
-    - name: Unpack friendlywrt rootfs
-      run: |
-        cd project
-        SUFFIX="${{ steps.config.outputs.suffix }}"
-        tar xzf "../rootfs-friendlywrt-${{ matrix.VERSION }}${SUFFIX}.tgz"
-
-    - name: Unpack host package-manager bundle
-      run: |
-        cd project
-        tar xzf "../host-pm-${{ matrix.VERSION }}.tgz"
-
-    - name: Compile uboot and kernel
-      run: |
-        cd project
-        ## If you need to modify the kernel configuration, please edit the script below
-        # source ../scripts/custome_kernel_config.sh
-
         ./build.sh uboot
-        ./build.sh kernel
 
-        ## If you want to compile a driver from source, here is an example
-        # case ${{ matrix.CPU }} in
-        # rk3568)
-        #     ../scripts/3rd/add_r8125.sh
-        #     ;;
-        # esac
+    - name: Package U-Boot products
+      run: bash custom/r28s/artifacts.sh package-uboot
 
-    - name: Build sd image
-      id: build_sd_image
+    - name: Upload U-Boot build products
+      uses: actions/upload-artifact@v4
+      with:
+        name: uboot-${{ env.VERSION }}
+        path: artifact/uboot/
+        if-no-files-found: error
+        retention-days: 1
+        compression-level: 0
+
+  build_kernel:
+    needs: prepare_release
+    runs-on: ubuntu-22.04
+    if: github.event_name == 'workflow_dispatch' || github.event.repository.owner.id == github.event.sender.id
+    steps:
+    - name: Checkout
+      uses: actions/checkout@v4
+
+    - name: Initialization environment
+      run: bash custom/r28s/host.sh setup
+
+    - name: Download source
+      run: bash custom/r28s/host.sh sync kernel
+
+    - name: Apply R28S kernel customizations
+      run: |
+        bash custom/r28s/artifacts.sh write-config
+        bash custom/r28s/apply-patches.sh kernel
+        cd project
+        source ../custom/r28s/kernel-config.sh
+
+    - name: Compile kernel
       run: |
         cd project
-        ./build.sh sd-img
-        mv out/${{ steps.config.outputs.img_filename }} ../artifact/
+        BUILD_THIRD_PARTY_DRIVER=0 ./build.sh kernel
 
-        # package images-xyz.tgz
-        pushd scripts/sd-fuse/ > /dev/null
-        if [ ! -d "${{ steps.config.outputs.dist_dir }}" ]; then
-            echo "ERROR: image directory ${{ steps.config.outputs.dist_dir }} not found under scripts/sd-fuse/"
-            ls -la
-            exit 1
-        fi
-        archive_dir="${{ steps.config.outputs.dist_dir }}-${{ matrix.CPU }}"
-        mv "${{ steps.config.outputs.dist_dir }}" "${archive_dir}"
-        tar czf "${{ steps.config.outputs.archive_filename }}" "${archive_dir}"
-        mv ${{ steps.config.outputs.archive_filename }} ../../../artifact/
-        popd > /dev/null
+    - name: Package kernel products
+      run: bash custom/r28s/artifacts.sh package-kernel
 
-        cd ../artifact/
-        gzip *.img
-
-    - name: Upload images-XYZ.tgz to release
-      uses: svenstaro/upload-release-action@v2
+    - name: Upload kernel build products
+      uses: actions/upload-artifact@v4
       with:
-        repo_token: ${{ secrets.GITHUB_TOKEN }}
-        file: ./artifact/${{ steps.config.outputs.archive_filename }}
-        asset_name: ${{ steps.config.outputs.archive_filename }}
-        tag: ${{ needs.prepare_release.outputs.release_tag }}
-        overwrite: true
+        name: kernel-${{ env.VERSION }}
+        path: artifact/kernel/
+        if-no-files-found: error
+        retention-days: 1
+        compression-level: 0
 
-    - name: Upload XYZ.img.gz to release
-      uses: svenstaro/upload-release-action@v2
-      with:
-        repo_token: ${{ secrets.GITHUB_TOKEN }}
-        file: ./artifact/${{ steps.config.outputs.img_filename }}.gz
-        asset_name: ${{ steps.config.outputs.img_filename }}.gz
-        tag: ${{ needs.prepare_release.outputs.release_tag }}
-        overwrite: true
-
-  cleanup_intermediate_assets:
-    needs: [prepare_release, build_img]
+  build_img:
+    needs: [prepare_release, build_friendlywrt, build_uboot, build_kernel]
     runs-on: ubuntu-22.04
-    if: github.event.repository.owner.id == github.event.sender.id
+    if: github.event_name == 'workflow_dispatch' || github.event.repository.owner.id == github.event.sender.id
     steps:
-    - name: Delete intermediate assets from release
-      env:
-        GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        RELEASE_TAG: ${{ needs.prepare_release.outputs.release_tag }}
-      run: |
-        gh release view "$RELEASE_TAG" \
-          --repo "$GITHUB_REPOSITORY" \
-          --json assets \
-          --jq '.assets[] | select(.name | startswith("rootfs-friendlywrt-") or startswith("host-pm-")) | .name' \
-        | while read -r asset; do
-            [ -z "$asset" ] && continue
-            echo "Deleting asset: $asset"
-            gh release delete-asset "$RELEASE_TAG" "$asset" --yes --repo "$GITHUB_REPOSITORY"
-          done
+    - name: Checkout
+      uses: actions/checkout@v4
 
+    - name: Initialization environment
+      run: bash custom/r28s/host.sh setup
+
+    - name: Download source
+      run: bash custom/r28s/host.sh sync image
+
+    - name: Download FriendlyWrt build products
+      uses: actions/download-artifact@v4
+      with:
+        name: friendlywrt-${{ env.VERSION }}
+        path: downloads/friendlywrt
+
+    - name: Download U-Boot build products
+      uses: actions/download-artifact@v4
+      with:
+        name: uboot-${{ env.VERSION }}
+        path: downloads/uboot
+
+    - name: Download kernel build products
+      uses: actions/download-artifact@v4
+      with:
+        name: kernel-${{ env.VERSION }}
+        path: downloads/kernel
+
+    - name: Prepare image build
+      run: |
+        bash custom/r28s/apply-patches.sh image
+        bash custom/r28s/artifacts.sh write-config
+        bash custom/r28s/artifacts.sh install-products
+
+    - name: Build SD image
+      run: |
+        cd project
+        SDFUSE_NONINTERACTIVE=1 ./build.sh sd-img
+        cd ..
+        bash custom/r28s/artifacts.sh collect-image
+
+    - name: Upload image to release
+      uses: svenstaro/upload-release-action@v2
+      with:
+        repo_token: ${{ secrets.GITHUB_TOKEN }}
+        file: ./artifact/${{ env.MODEL }}-FriendlyWrt-${{ env.VERSION }}.img.gz
+        asset_name: ${{ env.MODEL }}-FriendlyWrt-${{ env.VERSION }}.img.gz
+        tag: ${{ needs.prepare_release.outputs.release_tag }}
+        overwrite: true
