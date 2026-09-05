@@ -46,9 +46,7 @@ cd ..
 wait "$kernel_pid"
 trap - EXIT
 
-# Apply only the final-image cleanup patch, then let FriendlyElec assemble the
-# image through its unchanged build.sh entry point.
-bash "$ROOT_DIR/custom/r28s/apply-patches.sh" image
+# Let FriendlyElec assemble the final image through its unchanged build.sh entry point.
 SDFUSE_NONINTERACTIVE=1 ./build.sh sd-img
 
 echo "Image: $PROJECT_DIR/out/R28S-Zero2-NEO3Plus-Series-FriendlyWrt-25.12.img.gz"
