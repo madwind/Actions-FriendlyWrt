@@ -234,7 +234,6 @@ jobs:
 
     - name: Prepare image build
       run: |
-        bash custom/r28s/apply-patches.sh image
         bash custom/r28s/artifacts.sh write-config
         bash custom/r28s/artifacts.sh install-products
 
