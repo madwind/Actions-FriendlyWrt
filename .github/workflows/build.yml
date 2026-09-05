@@ -55,6 +55,22 @@ jobs:
         bash ../custom/r28s/artifacts.sh write-config
         DEBUG_DOT_CONFIG=1 ./build.sh friendlywrt
 
+    - name: Restore FriendlyWrt download cache
+      uses: actions/cache/restore@v4
+      with:
+        path: project/friendlywrt/dl
+        key: friendlywrt-dl-${{ runner.os }}-${{ env.VERSION }}-${{ github.run_id }}-${{ github.run_attempt }}
+        restore-keys: |
+          friendlywrt-dl-${{ runner.os }}-${{ env.VERSION }}-
+
+    - name: Restore FriendlyWrt ccache
+      uses: actions/cache/restore@v4
+      with:
+        path: project/friendlywrt/.ccache
+        key: friendlywrt-ccache-${{ runner.os }}-${{ env.VERSION }}-${{ github.run_id }}-${{ github.run_attempt }}
+        restore-keys: |
+          friendlywrt-ccache-${{ runner.os }}-${{ env.VERSION }}-
+
     - name: Download package
       run: |
         cd project/friendlywrt
@@ -77,6 +93,26 @@ jobs:
       run: |
         cd project/friendlywrt
         make -j1 V=s
+
+    - name: Show ccache statistics
+      if: always()
+      run: |
+        cd project/friendlywrt
+        make -s ccache-stats || true
+
+    - name: Save FriendlyWrt download cache
+      if: always()
+      uses: actions/cache/save@v4
+      with:
+        path: project/friendlywrt/dl
+        key: friendlywrt-dl-${{ runner.os }}-${{ env.VERSION }}-${{ github.run_id }}-${{ github.run_attempt }}
+
+    - name: Save FriendlyWrt ccache
+      if: always()
+      uses: actions/cache/save@v4
+      with:
+        path: project/friendlywrt/.ccache
+        key: friendlywrt-ccache-${{ runner.os }}-${{ env.VERSION }}-${{ github.run_id }}-${{ github.run_attempt }}
 
     - name: Package FriendlyWrt products
       run: bash custom/r28s/artifacts.sh package-friendlywrt
