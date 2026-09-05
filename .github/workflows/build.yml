@@ -83,6 +83,7 @@ jobs:
       run: |
         cd project
         source ../scripts/custome_config.sh
+        grep -qxF 'CONFIG_CCACHE=y' configs/rockchip/01-nanopi || echo 'CONFIG_CCACHE=y' >> configs/rockchip/01-nanopi
 
     - name: Prepare dot config and feeds
       run: |
@@ -94,6 +95,22 @@ jobs:
         TARGET_FRIENDLYWRT_CONFIG=rockchip
         EOL
         DEBUG_DOT_CONFIG=1 ./build.sh friendlywrt
+
+    - name: Restore source download cache
+      uses: actions/cache@v4
+      with:
+        path: project/friendlywrt/dl
+        key: friendlywrt-dl-${{ matrix.VERSION }}-${{ github.run_id }}
+        restore-keys: |
+          friendlywrt-dl-${{ matrix.VERSION }}-
+
+    - name: Restore compiler cache
+      uses: actions/cache@v4
+      with:
+        path: project/friendlywrt/.ccache
+        key: friendlywrt-ccache-${{ matrix.VERSION }}-${{ github.run_id }}
+        restore-keys: |
+          friendlywrt-ccache-${{ matrix.VERSION }}-
 
     - name: Download package
       run: |
@@ -117,6 +134,15 @@ jobs:
       run: |
         cd project/friendlywrt
         make -j1 V=s
+
+    - name: Show compiler cache statistics
+      run: |
+        cd project/friendlywrt
+        if [ -x staging_dir/host/bin/ccache ]; then
+          CCACHE_DIR="$PWD/.ccache" staging_dir/host/bin/ccache -M 2G
+          CCACHE_DIR="$PWD/.ccache" staging_dir/host/bin/ccache -c
+          CCACHE_DIR="$PWD/.ccache" staging_dir/host/bin/ccache -s
+        fi
 
     - name: Create rootfs package
       id: create_rootfs_package
@@ -272,12 +298,6 @@ jobs:
       run: |
         cd project
         tar xzf "../host-pm-${{ matrix.VERSION }}.tgz"
-
-    - name: Install R28S runtime tuning
-      run: |
-        cd project
-        source .current_config.mk
-        bash ../scripts/install_r28s_tune.sh "${FRIENDLYWRT_SRC}/${FRIENDLYWRT_ROOTFS}"
 
     - name: Exclude local APK repository from firmware
       run: |
