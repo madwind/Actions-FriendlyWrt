@@ -1,124 +1,152 @@
-# 使用 GitHub Actions 编译 FriendlyWrt
-[English](README_en.md)
-### 基本信息 
-- 用户名：root
-- 密码：password
-- 后台IP：192.168.2.1
-- 固件下载地址： https://github.com/friendlyarm/Actions-FriendlyWrt/releases
-- 更多使用说明: https://wiki.friendlyelec.com/wiki/index.php/Template:FriendlyWrt21/zh
-### R28S 性能调优
-R28S 可在系统启动后执行以下命令安装并启用 `r28s-tune`：
+# R28S FriendlyWrt
+
+基于 FriendlyElec `Actions-FriendlyWrt` 的 NanoPi R28S 定制构建。
+
+本仓库不再保留上游的通用固件配置，主要目标是：**减少无用组件、缩短重复构建时间，并保留 R28S 实际需要的功能。**
+
+## 主要改动
+
+### 精简 FriendlyWrt
+
+- 基于 OpenWrt / FriendlyWrt `25.12`。
+- 清除 FriendlyWrt 原有的大量显式软件包选择，改回接近 OpenWrt `rockchip/armv8` release 的基础用户空间。
+- 保留 LuCI、网络、无线和系统管理所需的基础组件。
+- 保留 R28S 所需的 Wi-Fi 支持。
+- 禁用：
+  - `CONFIG_ALL_KMODS`
+  - `CONFIG_ALL_NONSHARED`
+  - `CONFIG_BUILDBOT`
+  - SDK
+  - Image Builder
+  - Toolchain 产物
+- 不再预装 R28S 不需要的 `kmod-usb-net-rtl8152` 和 `r8152-firmware`。
+- 将 FriendlyWrt 默认 root 密码恢复为空密码，首次登录后请自行设置密码。
+
+### 精简内核构建
+
+R28S 内核继续使用 FriendlyElec 官方源码和构建流程，只通过最小补丁移除不需要的额外构建：
+
+- 不编译外置 `r8125` 驱动。
+- 不编译 `cryptodev-linux`。
+- 不编译额外的 `rtw88/8822ce` backport。
+- 构建时关闭通用第三方 USB Wi-Fi 驱动批量编译。
+- 保留 FriendlyElec 原有 R28S 内核配置和板级支持。
+- 额外启用：
+  - `CONFIG_NET_ACT_CT=m`
+  - `CONFIG_NET_ACT_CTINFO=m`
+
+### 更干净的最终镜像
+
+FriendlyElec 在生成镜像时会临时使用本地 APK 软件仓库。本仓库在最终打包前删除：
+
+- 镜像内的本地 APK 软件包仓库。
+- `/etc/apk/repositories.d/local.list`。
+
+这些内容只在构建阶段使用，不再占用最终固件空间。
+
+### 不生成升级包
+
+Release 只发布最终可直接写盘的：
+
+```text
+R28S-Zero2-NEO3Plus-Series-FriendlyWrt-25.12.img.gz
+```
+
+不再生成或发布额外的 `images-*.tgz` 升级包。
+
+## GitHub Actions 构建优化
+
+构建流程拆分为多个独立任务：
+
+- FriendlyWrt
+- U-Boot
+- Kernel
+- Image
+
+FriendlyWrt、U-Boot 和 Kernel 可以分别完成后，再由 Image Job 汇总产物生成最终镜像，避免所有步骤串行执行。
+
+同时启用两类 GitHub Actions 缓存：
+
+- `friendlywrt/dl`：缓存 OpenWrt 下载文件。
+- `friendlywrt/.ccache`：缓存编译器输出。
+
+OpenWrt 配置中同时启用 `CONFIG_CCACHE=y`，因此修改少量配置后重新构建时可以复用之前的大量编译结果。
+
+## GitHub Actions 构建
+
+打开：
+
+```text
+Actions -> Build FriendlyWrt -> Run workflow
+```
+
+构建完成后，最终的 `.img.gz` 会直接上传到当天创建的 GitHub Release。
+
+## 本地构建
+
+仓库提供本地构建脚本：
+
+```sh
+bash custom/r28s/build-local.sh
+```
+
+脚本仍然调用 FriendlyElec 官方 `build.sh`，只在必要位置应用 R28S 定制配置和补丁。
+
+主要流程：
+
+1. 同步 FriendlyElec 源码。
+2. 应用精简后的 FriendlyWrt 配置。
+3. 下载软件包源码。
+4. 编译 U-Boot。
+5. Kernel 与 FriendlyWrt 并行编译。
+6. 使用官方 `sd-img` 流程生成最终镜像。
+
+## R28S 性能调优
+
+`r28s-tune` 不再直接集成进固件，改为可选安装脚本。需要时在 R28S 上执行：
+
 ```sh
 wget -qO- https://raw.githubusercontent.com/madwind/Actions-FriendlyWrt/master/custom/r28s/install-tune.sh | sh
 ```
-### 固件文件说明
-- XYZ.img.gz：固件镜像，可写入 SD 卡或 eMMC 启动。
-- images-XYZ.tgz：升级包，仅供 "eMMC 刷机助手" 使用，不能直接写入 SD 卡启动。
-### 如何刷入 eMMC
-- 首次安装：先将 XYZ.img.gz 写入 SD 卡并启动系统，进入 FriendlyWrt 后台 → "系统" → "eMMC 刷机助手"，上传固件直接刷入（无需解压）。完成后弹出 SD 卡，设备会自动重启并从 eMMC 启动。
-- 小版本升级（如 25.12.2 → 25.12.3）：在 "eMMC 刷机助手" 中刷入 images-XXYYZZ.tgz，可选择保留数据，但兼容性需自行评估。
-- 大版本升级（如 24.10 → 25.12）：建议先[备份配置](https://openwrt.org/docs/guide-user/troubleshooting/backup_restore)，然后使用 XYZ.img.gz 全量安装，以避免兼容性问题。
-### 更新说明
-* 2026/08/07
-    *  增加 NanoPi-R28S 支持
-    *  修正 RTL8125 相关问题 [#130](https://github.com/friendlyarm/Actions-FriendlyWrt/issues/130)
-* 2026/07/22
-    *  更新RTL8125驱动, 提升2.5G网卡性能，降低待机功耗
-* 2026/07/08
-    *  更新到新版本 openwrt-25.12.5
-* 2026/06/25
-    *  新增对 NanoPC-T4 和 NanoPi-M4v2 板载 WiFi 的支持
-* 2026/06/09
-    *  RK33xx内核更新至6.6.134, 优化内核配置，修复重启后 USB 设备偶发无法工作的问题
-    *  增加 NanoPi-M6V2 支持
-* 2026/06/05
-    *  更新到新版本 openwrt-25.12.4
-* 2026/04/29
-    *  更新到新版本 openwrt-25.12.2
-    *  更新了"eMMC刷机助手"，加强稳定性，支持更多格式
-    *  内核启用内置fq_codel队列调度以改善网络延迟
-* 2026/03/06
-    *  增加 NanoPi-NEO3-Plus 支持
-* 2025/12/31
-    *  更新到新版本 openwrt-24.10.4
-    *  RK35xx内核更新至6.1.141
-* 2025/08/04
-    *  RK35xx内核更新至6.1.118
-* 2025/07/09
-    *  增加 NanoPi-R76S 支持
-    *  修复 PWM 风扇控制问题 (使用pwm-fan驱动模块)
-* 2025/06/30
-    *  更新到新版本 openwrt-24.10.2
-    *  更新了内核网络部分的配置
-* 2025/06/25
-    *  增加 NanoPi-R3S-LTS 支持
-* 2025/06/06
-    *  增加 NanoPi-M5 支持
-    *  增加 RTL8851BU 无线网卡的支持
-* 2025/03/24
-    *  修正opt分区inode过小的问题
-    *  从eMMC启动时，为内存超1G设备重新启用eMMC刷机助手
-* 2025/02/28
-    *  更新到新版本 openwrt-24.10.0
-    *  RK33xx内核更新至6.6.78+
-    *  调整分区：固定根分区大小，增加独立分区以提升 Docker 存储性能，恢复出厂设置后该分区数据仍会得到保留
-* 2025/02/11
-    *  RK35xx内核更新至6.1.99
-* 2024/12/09
-    *  修正luci-app-diskman插件的显示问题 (thanks [helmx](https://github.com/helmx))
-* 2024/10/16
-    *  更新到新版本 openwrt-23.05.5
-    *  增加 NanoPi-Zero2 支持
-* 2024/09/14 增加NanoPi-R3S支持
-* 2024/08/30
-    *  更新到新版本 openwrt-23.05.4
-    *  增加 NanoPi-M6 支持
-* 2024/07/03
-    *  修复因固件丢失而导致的WIFI问题
-* 2024/06/06
-    *  RK35xx内核更新至6.1.57
-* 2024/03/29
-    *  更新到新版本 openwrt-23.05.3
-* 2024/02/02
-    *  为模块rtl8822ce增加无线中继模式的支持,[设置方法](https://wiki.friendlyelec.com/wiki/index.php/NanoPi_R5C/zh#.E6.97.A0.E7.BA.BF.E4.B8.AD.E7.BB.A7.E6.A8.A1.E5.BC.8F)
-* 2023/12/22
-    *  更新到新版本 openwrt-23.05.2
-    *  修正eMMC刷机工具对大容量eMMC的兼容性问题
-* 2023/10/31
-    *  更新到新版本 openwrt-23.05.0
-    *  内核更新至6.1
-* 2023/07/04
-    *  内核更新至5.10.160 (rk3568/rk3588)
-* 2023/06/10
-    *  增加 MediaTek MT7921 无线网卡的支持
-* 2023/05/31
-    *  增加 NanoPC-T6 支持
-    *  更新 v22.03 到新版本 openwrt-22.03.5
-    *  更新 v21.02 到新版本 openwrt-21.02.7
-* 2023/04/26
-    *  增加 R5C-2GB 支持
-    *  更新 v22.03 到新版本 openwrt-22.03.4
-    *  更新 v21.02 到新版本 openwrt-21.02.6
-* 2023/03/15
-    *  增加R6C支持
-    *  更新initramfs,[可禁用OverlayFS或者创建额外的分区](https://wiki.friendlyelec.com/wiki/index.php/How_to_use_overlayfs_on_Linux/zh)
-* 2023/03/01
-    *  更新到新版本 openwrt-22.03.3
-    *  为rk3568/rk3588的5.10内核增加ntfs3驱动
-    *  更新内核小版本
-    *  更新网卡驱动
-* 2022/12/04
-    *  增加R5C支持
-    *  修正存储空间某些情况下无法扩展的问题
-    *  加强eMMC刷机工具的刷机稳定性
-* 2022/11/24
-    *  修正R6S 1G网口不可用问题  
-    *  eMMC刷机工具现可以在eMMC启动时使用  
-* 2022/11/01 增加R6S支持
-* 2022/10/09 首次发布
-### Thanks / 致谢
-- [luci-app-diskman](https://github.com/lisaac/luci-app-diskman)
-- [luci-theme-argon](https://github.com/jerrykuku/luci-theme-argon)
-- [P3TERX](https://github.com/P3TERX/Actions-OpenWrt)
-- [NanoPi-R1S-Build-By-Actions](https://github.com/skytotwo/NanoPi-R1S-Build-By-Actions)
-- [QiuSimons](https://github.com/QiuSimons/YAOF)
+
+安装脚本会自动安装 `ethtool`（如果系统尚未安装），并创建开机及接口上线自动执行的调优脚本。
+
+当前调优内容包括：
+
+- 关闭 OpenWrt `packet_steering`。
+- 将 IRQ 48 绑定到 CPU1。
+- 设置 `eth0` / `eth1` RPS CPU mask。
+- 关闭 RFS flow table。
+- 为 `eth1` 启用 SG / TSO / GSO。
+- 如果内核提供 `tcp_bbr`，自动加载并切换 TCP 拥塞控制为 BBR。
+
+安装后也可以手动重新应用：
+
+```sh
+/usr/sbin/r28s-tune
+```
+
+## 目录
+
+```text
+custom/r28s/
+├── config.sh                 FriendlyWrt 软件包和构建配置
+├── kernel-config.sh          R28S 内核配置增量
+├── host.sh                   CI / 本地构建环境与源码同步
+├── artifacts.sh              多 Job 构建产物打包和组装
+├── build-local.sh            本地构建入口
+├── install-tune.sh           R28S 可选运行时性能调优
+├── apply-patches.sh          应用最小化补丁
+└── patches/
+    ├── friendlywrt-config.patch
+    ├── kernel-drivers.patch
+    └── image-local-repo.patch
+```
+
+## 上游
+
+本项目基于 FriendlyElec 官方项目：
+
+- https://github.com/friendlyarm/Actions-FriendlyWrt
+
+FriendlyElec 的原始 `build.sh`、内核和镜像构建流程仍作为主要构建基础，本仓库只维护 R28S 所需的定制差异。
