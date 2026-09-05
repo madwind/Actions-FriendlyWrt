@@ -51,6 +51,10 @@ cat >> "$BASE_CONFIG" <<'EOF'
 # CONFIG_ALL_NONSHARED is not set
 # CONFIG_BUILDBOT is not set
 
+# The R28S board uses RTL8111H and RTL8211F Ethernet, not an RTL8152 USB NIC.
+# CONFIG_PACKAGE_kmod-usb-net-rtl8152 is not set
+# CONFIG_PACKAGE_r8152-firmware is not set
+
 # OpenWrt 25.12 rockchip/armv8 release user-space package set.
 CONFIG_PACKAGE_cgi-io=y
 CONFIG_DRIVER_11AC_SUPPORT=y
