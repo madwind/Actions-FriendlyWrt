@@ -35,6 +35,8 @@ for config in "$ROCKCHIP_CONFIG_DIR"/*; do
     sed -i -E \
         -e '/^(# )?CONFIG_PACKAGE_/d' \
         -e '/^(# )?CONFIG_(ALL_KMODS|ALL_NONSHARED|BUILDBOT)(=| is not set)/d' \
+        -e '/^(# )?CONFIG_CCACHE(=| is not set)/d' \
+        -e '/^CONFIG_CCACHE_DIR=/d' \
         -e '/^CONFIG_LUCI_LANG_/d' \
         -e '/^CONFIG_BUSYBOX_CUSTOM=/d' \
         -e '/^CONFIG_BUSYBOX_CONFIG_/d' \
@@ -50,6 +52,9 @@ cat >> "$BASE_CONFIG" <<'EOF'
 # CONFIG_ALL_KMODS is not set
 # CONFIG_ALL_NONSHARED is not set
 # CONFIG_BUILDBOT is not set
+
+# Reuse compiler outputs between incremental local and CI builds.
+CONFIG_CCACHE=y
 
 # The R28S board uses RTL8111H and RTL8211F Ethernet, not an RTL8152 USB NIC.
 # CONFIG_PACKAGE_kmod-usb-net-rtl8152 is not set
