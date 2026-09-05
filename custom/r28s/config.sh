@@ -27,12 +27,14 @@ sed -i -e '/CONFIG_MAKE_TOOLCHAIN=y/d' "$BASE_CONFIG"
 sed -i -e 's/CONFIG_IB=y/# CONFIG_IB is not set/g' "$BASE_CONFIG"
 sed -i -e 's/CONFIG_SDK=y/# CONFIG_SDK is not set/g' "$BASE_CONFIG"
 
-# Remove FriendlyWrt's explicit package selections, then restore the OpenWrt
-# 25.12 rockchip/armv8 release user-space set plus the R28S Wi-Fi requirements.
+# Remove FriendlyWrt's explicit package selections and broad buildbot defaults,
+# then restore the OpenWrt 25.12 rockchip/armv8 release user-space set plus the
+# R28S Wi-Fi requirements.
 for config in "$ROCKCHIP_CONFIG_DIR"/*; do
     [ -f "$config" ] || continue
     sed -i -E \
         -e '/^(# )?CONFIG_PACKAGE_/d' \
+        -e '/^(# )?CONFIG_(ALL_KMODS|ALL_NONSHARED|BUILDBOT)(=| is not set)/d' \
         -e '/^CONFIG_LUCI_LANG_/d' \
         -e '/^CONFIG_BUSYBOX_CUSTOM=/d' \
         -e '/^CONFIG_BUSYBOX_CONFIG_/d' \
@@ -42,6 +44,12 @@ for config in "$ROCKCHIP_CONFIG_DIR"/*; do
 done
 
 cat >> "$BASE_CONFIG" <<'EOF'
+
+# Build only packages needed by the selected firmware instead of all target
+# kernel modules and target-specific packages.
+# CONFIG_ALL_KMODS is not set
+# CONFIG_ALL_NONSHARED is not set
+# CONFIG_BUILDBOT is not set
 
 # OpenWrt 25.12 rockchip/armv8 release user-space package set.
 CONFIG_PACKAGE_cgi-io=y
