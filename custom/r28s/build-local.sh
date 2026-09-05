@@ -11,6 +11,11 @@ cd "$PROJECT_DIR"
 source "$ROOT_DIR/custom/r28s/config.sh"
 bash "$ROOT_DIR/custom/r28s/artifacts.sh" write-config
 
+# FriendlyElec reuses an existing .config and otherwise forces CONFIG_ALL_KMODS.
+# Patch that default and regenerate .config from the customized rockchip config.
+bash "$ROOT_DIR/custom/r28s/apply-patches.sh" friendlywrt
+rm -f "$PROJECT_DIR/friendlywrt/.config"
+
 # Let the official FriendlyElec build script prepare feeds and .config without
 # compiling the OpenWrt tree yet. This also installs its expected toolchains.
 DEBUG_DOT_CONFIG=1 ./build.sh friendlywrt
