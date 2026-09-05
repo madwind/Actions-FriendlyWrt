@@ -26,16 +26,12 @@ case "${1:-}" in
     kernel)
         apply_patch "$PROJECT_DIR/scripts/sd-fuse" "$PATCH_DIR/kernel-drivers.patch"
         ;;
-    image)
-        apply_patch "$PROJECT_DIR/scripts" "$PATCH_DIR/image-local-repo.patch"
-        ;;
     all)
         apply_patch "$PROJECT_DIR/scripts" "$PATCH_DIR/friendlywrt-config.patch"
         apply_patch "$PROJECT_DIR/scripts/sd-fuse" "$PATCH_DIR/kernel-drivers.patch"
-        apply_patch "$PROJECT_DIR/scripts" "$PATCH_DIR/image-local-repo.patch"
         ;;
     *)
-        echo "Usage: $0 friendlywrt|kernel|image|all" >&2
+        echo "Usage: $0 friendlywrt|kernel|all" >&2
         exit 1
         ;;
 esac
