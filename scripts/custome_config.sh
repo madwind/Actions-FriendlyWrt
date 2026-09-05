@@ -43,19 +43,15 @@ done
 # Restore the OpenWrt 25.12 rockchip/armv8 release user-space package set.
 # Normal router packages such as dnsmasq, firewall4, nftables, odhcp6c and PPP
 # come from OpenWrt target/device defaults and are intentionally not duplicated.
-# ethtool is the only extra package and is used to force the R28S NIC offloads on.
 cat >> "$BASE_CONFIG" <<'EOF'
 
 # OpenWrt 25.12 rockchip/armv8 release user-space package set.
-CONFIG_PACKAGE_attendedsysupgrade-common=y
 CONFIG_PACKAGE_cgi-io=y
-CONFIG_PACKAGE_ethtool=y
 CONFIG_PACKAGE_libiwinfo=y
 CONFIG_PACKAGE_libiwinfo-data=y
 CONFIG_PACKAGE_liblucihttp=y
 CONFIG_PACKAGE_liblucihttp-ucode=y
 CONFIG_PACKAGE_luci=y
-CONFIG_PACKAGE_luci-app-attendedsysupgrade=y
 CONFIG_PACKAGE_luci-app-firewall=y
 CONFIG_PACKAGE_luci-app-package-manager=y
 CONFIG_PACKAGE_luci-base=y
@@ -69,7 +65,6 @@ CONFIG_PACKAGE_luci-proto-ipv6=y
 CONFIG_PACKAGE_luci-proto-ppp=y
 CONFIG_PACKAGE_luci-ssl=y
 CONFIG_PACKAGE_luci-theme-bootstrap=y
-CONFIG_PACKAGE_owut=y
 CONFIG_PACKAGE_px5g-mbedtls=y
 CONFIG_PACKAGE_rpcd=y
 CONFIG_PACKAGE_rpcd-mod-file=y
