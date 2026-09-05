@@ -1,10 +1,10 @@
 diff --git a/mk-friendlywrt.sh b/mk-friendlywrt.sh
 --- a/mk-friendlywrt.sh
 +++ b/mk-friendlywrt.sh
-@@ -31,7 +31,6 @@ if [ ! -f .config ]; then
+@@ -31,7 +31,5 @@ if [ ! -f .config ]; then
  		cp ${TOP_DIR}/configs/${TARGET_FRIENDLYWRT_CONFIG} .config
  	fi
- 	sed -i -e '/^# CONFIG_PACKAGE_kmod-/d' .config
+-	sed -i -e '/^# CONFIG_PACKAGE_kmod-/d' .config
 -	echo CONFIG_ALL_KMODS=y >> .config
  
  	# Fix compilation errors on the arm64 platform
